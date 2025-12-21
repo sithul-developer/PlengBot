@@ -9,8 +9,11 @@ import traceback
 import threading
 import concurrent.futures
 import hashlib
+import ssl
+import certifi
 from queue import Queue
 from dotenv import load_dotenv
+from urllib3 import poolmanager
 
 # Load environment variables
 load_dotenv()
@@ -32,7 +35,24 @@ if not API_TOKEN:
     logger.error("No TELEGRAM_BOT_TOKEN found in environment variables")
     raise ValueError("No TELEGRAM_BOT_TOKEN found in environment variables")
 
-bot = telebot.TeleBot(API_TOKEN)
+# Configure SSL context
+class TLSAdapter(requests.adapters.HTTPAdapter):
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        """Create and initialize the urllib3 PoolManager."""
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        pool_kwargs['ssl_context'] = ctx
+        return super(TLSAdapter, self).init_poolmanager(
+            connections, maxsize, block, **pool_kwargs)
+
+# Create session with SSL configuration
+session = requests.Session()
+session.mount('https://', TLSAdapter())
+
+# Configure bot with custom session
+bot = telebot.TeleBot(API_TOKEN, threaded=True, num_threads=4)
+bot.session = session  # Use our custom session
 
 # Remove webhook
 try:
@@ -48,6 +68,8 @@ class FastYouTubeDownloader:
     def __init__(self):
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
         self.cache = {}
+        self.session = requests.Session()
+        self.session.mount('https://', TLSAdapter())
     
     def get_audio_info(self, url):
         """Get audio info with detailed debugging"""
@@ -200,12 +222,12 @@ class FastYouTubeDownloader:
         """Check if direct URL is accessible"""
         try:
             headers = {'User-Agent': 'Mozilla/5.0', 'Range': 'bytes=0-1000'}
-            response = requests.head(url, headers=headers, timeout=10)
+            response = self.session.head(url, headers=headers, timeout=10, verify=False)
             return response.status_code in [200, 206]
         except:
             return False
     
-    def download_audio(self, url, max_size=50*1024*1024):
+    def download_audio(self, url):
         """Download audio with better error handling"""
         logger.debug(f"Downloading from: {url[:100]}...")
         
@@ -221,12 +243,8 @@ class FastYouTubeDownloader:
         }
         
         try:
-            response = requests.get(url, headers=headers, stream=True, timeout=45)
+            response = self.session.get(url, headers=headers, stream=True, timeout=45, verify=False)
             response.raise_for_status()
-            
-            content_length = response.headers.get('Content-Length')
-            if content_length and int(content_length) > max_size:
-                raise Exception(f"File too large ({int(content_length)/1024/1024:.1f}MB)")
             
             audio_buffer = io.BytesIO()
             downloaded = 0
@@ -235,9 +253,6 @@ class FastYouTubeDownloader:
                 if chunk:
                     audio_buffer.write(chunk)
                     downloaded += len(chunk)
-                    
-                    if downloaded > max_size:
-                        raise Exception(f"File exceeds size limit ({max_size/1024/1024}MB)")
             
             if downloaded == 0:
                 raise Exception("Downloaded empty file")
@@ -306,7 +321,7 @@ Send me any YouTube link and I'll download the audio for you!
 
 <b>Limits:</b>
 • Max 30 minutes per video
-• Max 50MB file size
+• No file size limits
 
 <b>Troubleshooting:</b>
 1. Make sure the video is publicly available
@@ -314,7 +329,10 @@ Send me any YouTube link and I'll download the audio for you!
 3. Check bot_debug.log for detailed errors
 
 Send a YouTube URL to begin!"""
-    bot.send_message(message.chat.id, welcome_text, parse_mode='HTML')
+    try:
+        bot.send_message(message.chat.id, welcome_text, parse_mode='HTML')
+    except Exception as e:
+        logger.error(f"Failed to send welcome message: {e}")
 
 @bot.message_handler(commands=['debug'])
 def debug_info(message):
@@ -329,7 +347,10 @@ def debug_info(message):
 <b>Memory Usage:</b> {os.path.getsize('bot_debug.log')/1024:.1f}KB logs
 
 Send a test URL or check the log file for details."""
-    bot.send_message(message.chat.id, info, parse_mode='HTML')
+    try:
+        bot.send_message(message.chat.id, info, parse_mode='HTML')
+    except Exception as e:
+        logger.error(f"Failed to send debug info: {e}")
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
@@ -340,12 +361,15 @@ def handle_message(message):
     # Enhanced validation
     valid_domains = ['youtube.com/watch', 'youtu.be/', 'youtube.com/shorts/']
     if not any(domain in url for domain in valid_domains):
-        bot.send_message(message.chat.id, 
-                        "❌ Please send a valid YouTube URL.\n"
-                        "Examples:\n"
-                        "• https://www.youtube.com/watch?v=...\n"
-                        "• https://youtu.be/...\n"
-                        "• https://www.youtube.com/shorts/...")
+        try:
+            bot.send_message(message.chat.id, 
+                            "❌ Please send a valid YouTube URL.\n"
+                            "Examples:\n"
+                            "• https://www.youtube.com/watch?v=...\n"
+                            "• https://youtu.be/...\n"
+                            "• https://www.youtube.com/shorts/...")
+        except Exception as e:
+            logger.error(f"Failed to send validation error: {e}")
         return
     
     # Delete user's message for privacy
@@ -358,15 +382,15 @@ def handle_message(message):
     process_download_async(message.chat.id, message.from_user.id, url)
 
 def clean_text(text):
-    """Escape markdown special characters properly"""
+    """Clean text for Telegram (remove special characters)"""
     if not text:
         return ""
-    # Escape markdown special characters with a backslash
-    md_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
-    result = text
-    for char in md_chars:
-        result = result.replace(char, '\\' + char)
-    return result
+    # Remove Unicode characters that might cause issues
+    text = text.encode('ascii', 'ignore').decode('ascii')
+    # Remove problematic characters
+    for char in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
+        text = text.replace(char, '')
+    return text.strip()
 
 def process_download_async(chat_id, user_id, url):
     """Process download in background thread"""
@@ -375,15 +399,25 @@ def process_download_async(chat_id, user_id, url):
         
         try:
             # Send initial message (plain text)
-            status_msg = bot.send_message(chat_id, "🔍 Analyzing video...")
+            try:
+                status_msg = bot.send_message(chat_id, "🔍 Analyzing video...")
+            except Exception as e:
+                logger.error(f"Failed to send initial message: {e}")
+                return
             
             start_time = time.time()
             
             # Get and validate audio
-            bot.edit_message_text("⚡ Extracting audio information...", 
-                                chat_id, status_msg.message_id)
+            try:
+                bot.edit_message_text("⚡ Extracting audio information...", 
+                                    chat_id, status_msg.message_id)
+            except:
+                pass
             
-            audio_buffer, audio_info = downloader.fast_download(url)
+            try:
+                audio_buffer, audio_info = downloader.fast_download(url)
+            except Exception as e:
+                raise Exception(f"Download failed: {str(e)}")
             
             extract_time = time.time() - start_time
             filesize = len(audio_buffer.getvalue())
@@ -391,66 +425,75 @@ def process_download_async(chat_id, user_id, url):
             if filesize == 0:
                 raise Exception("Downloaded empty file")
             
-            # Clean titles
+            # Clean titles (simplified)
             clean_title = clean_text(audio_info['title'][:40])
             clean_uploader = clean_text(audio_info.get('uploader', 'Unknown'))
             
             # Update status (plain text)
-            bot.edit_message_text(
-                f"✅ Audio Extracted!\n"
-                f"Title: {clean_title}...\n"
-                f"Uploader: {clean_uploader}\n"
-                f"Duration: {audio_info['duration']}s\n"
-                f"Size: {filesize/1024/1024:.1f}MB\n"
-                f"Time: {extract_time:.1f}s",
-                chat_id,
-                status_msg.message_id
-            )
+            try:
+                bot.edit_message_text(
+                    f"✅ Audio Extracted!\n"
+                    f"Title: {clean_title}...\n"
+                    f"Uploader: {clean_uploader}\n"
+                    f"Duration: {audio_info['duration']}s\n"
+                    f"Size: {filesize/1024/1024:.1f}MB\n"
+                    f"Time: {extract_time:.1f}s",
+                    chat_id,
+                    status_msg.message_id
+                )
+            except:
+                pass
             
             time.sleep(1)
             
             # Upload to Telegram
-            bot.edit_message_text("📤 Uploading to Telegram...", 
-                                chat_id, status_msg.message_id)
+            try:
+                bot.edit_message_text("📤 Uploading to Telegram...", 
+                                    chat_id, status_msg.message_id)
+            except:
+                pass
             
             upload_start = time.time()
             
-            # Clean caption
+            # Clean caption (simplified)
             safe_caption = clean_text(audio_info['title'][:100])
             
-            if filesize > 20 * 1024 * 1024:
-                bot.send_document(
-                    chat_id=chat_id,
-                    document=audio_buffer,
-                    caption=f"🎵 {safe_caption}",
-                    timeout=120
-                )
-            else:
+            try:
+                # Always send as audio with simplified metadata
                 bot.send_audio(
                     chat_id=chat_id,
                     audio=audio_buffer,
-                    title=clean_text(audio_info['title'][:64]),
-                    performer=clean_uploader[:64],
+                    title=clean_text(audio_info['title'][:30]),
+                    performer=clean_uploader[:30],
                     duration=min(audio_info['duration'], 600),
                     caption=f"🎵 {safe_caption}",
-                    timeout=120
+                    timeout=300,  # Longer timeout for large files
+                    parse_mode=None  # No HTML parsing
                 )
-            
-            upload_time = time.time() - upload_start
-            
-            # Final success message
-            bot.edit_message_text(
-                f"✅ Download Complete!\n"
-                f"Total Time: {extract_time + upload_time:.1f}s\n"
-                f"Size: {filesize/1024/1024:.1f}MB\n"
-                f"Title: {clean_title}...\n\n"
-                f"✨ Ready for another download!",
-                chat_id,
-                status_msg.message_id
-            )
-            
-            time.sleep(10)
-            bot.delete_message(chat_id, status_msg.message_id)
+                
+                upload_time = time.time() - upload_start
+                
+                # Final success message
+                try:
+                    bot.edit_message_text(
+                        f"✅ Download Complete!\n"
+                        f"Total Time: {extract_time + upload_time:.1f}s\n"
+                        f"Size: {filesize/1024/1024:.1f}MB\n\n"
+                        f"✨ Ready for another download!",
+                        chat_id,
+                        status_msg.message_id
+                    )
+                except:
+                    pass
+                
+                time.sleep(10)
+                try:
+                    bot.delete_message(chat_id, status_msg.message_id)
+                except:
+                    pass
+                
+            except Exception as e:
+                raise Exception(f"Failed to upload to Telegram: {str(e)}")
             
         except Exception as e:
             logger.error(f"Error for user {user_id}: {traceback.format_exc()}")
@@ -462,7 +505,7 @@ def process_download_async(chat_id, user_id, url):
                 if "too long" in error_msg.lower():
                     user_friendly_msg += "Video too long (max 30 minutes)"
                 elif "too large" in error_msg.lower():
-                    user_friendly_msg += "File too large (max 50MB)"
+                    user_friendly_msg += "File too large for Telegram"
                 elif "private" in error_msg.lower() or "unavailable" in error_msg.lower():
                     user_friendly_msg += "Video is private or unavailable"
                 elif "age-restricted" in error_msg.lower():
@@ -470,13 +513,21 @@ def process_download_async(chat_id, user_id, url):
                 elif "could not extract" in error_msg.lower():
                     user_friendly_msg += "Could not extract audio. Video may be restricted."
                 elif "timeout" in error_msg.lower():
-                    user_friendly_msg += "Download timeout. Try a shorter video."
+                    user_friendly_msg += "Upload timeout. Try a smaller video."
+                elif "ssl" in error_msg.lower() or "certificate" in error_msg.lower():
+                    user_friendly_msg += "Connection error. Please try again."
                 else:
-                    user_friendly_msg += f"Error: {str(e)[:60]}"
+                    user_friendly_msg += f"Error: {str(e)[:50]}"
                 
                 # Send error (plain text)
-                bot.edit_message_text(user_friendly_msg, 
-                                     chat_id, status_msg.message_id)
+                try:
+                    bot.edit_message_text(user_friendly_msg, 
+                                         chat_id, status_msg.message_id)
+                except:
+                    try:
+                        bot.send_message(chat_id, user_friendly_msg)
+                    except:
+                        pass
             
             time.sleep(10)
             if status_msg:
@@ -531,12 +582,20 @@ if __name__ == '__main__':
     except:
         logger.warning("Could not determine yt-dlp version")
     
+    # Disable SSL warnings for testing
+    requests.packages.urllib3.disable_warnings()
+    
     try:
         bot.enable_save_next_step_handlers(delay=2)
         bot.load_next_step_handlers()
         
         logger.info("Starting bot infinity polling...")
-        bot.infinity_polling(timeout=90, skip_pending=True, long_polling_timeout=90)
+        bot.infinity_polling(
+            timeout=90, 
+            skip_pending=True, 
+            long_polling_timeout=90,
+            logger_level=logging.INFO
+        )
         
     except KeyboardInterrupt:
         print("\nBot stopped by user.")

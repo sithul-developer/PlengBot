@@ -465,7 +465,7 @@ def process_download_async(chat_id, user_id, url):
             # Clean caption
             safe_caption = clean_text(audio_info['title'][:100])
             
-            if filesize > 20 * 1024 * 1024:
+            if filesize > 50 * 1024 * 1024:
                 bot.send_document(
                     chat_id=chat_id,
                     document=audio_buffer,

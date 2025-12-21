@@ -205,7 +205,7 @@ class FastYouTubeDownloader:
         except:
             return False
     
-    def download_audio(self, url, max_size=50*1024*1024):
+    def download_audio(self, url, max_size=120*1024*1024):
         """Download audio with better error handling"""
         logger.debug(f"Downloading from: {url[:100]}...")
         

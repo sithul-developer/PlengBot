@@ -499,7 +499,7 @@ def create_cookies_instructions():
 2. Log into YouTube in your browser
 3. Click the extension and export cookies
 4. Save as 'cookies.txt' in the bot directory
-5. Restart the bot
+5. Restart the bot 
 
 This helps avoid YouTube bot detection.
 """

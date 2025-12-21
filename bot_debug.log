@@ -10,3 +10,15 @@
 2025-12-21 09:15:02,790 - __main__ - DEBUG - Audio URL: https://rr1---sn-nh5gu5mp5u5-2oi6.googlevideo.com/videoplayback?expire=1766304901&ei=JVhHafifL7CMg8U...
 2025-12-21 09:15:02,790 - __main__ - DEBUG - Downloading from: https://rr1---sn-nh5gu5mp5u5-2oi6.googlevideo.com/videoplayback?expire=1766304901&ei=JVhHafifL7CMg8U...
 2025-12-21 09:15:10,196 - __main__ - DEBUG - Downloaded 5.63MB successfully
+2025-12-21 09:50:10,506 - __main__ - INFO - New request from user 5742761331: https://youtu.be/_P8J2hiNXu8?si=RMGfwaANsio8TOmW
+2025-12-21 09:50:16,194 - __main__ - INFO - Starting download process for: https://youtu.be/_P8J2hiNXu8?si=RMGfwaANsio8TOmW
+2025-12-21 09:50:16,194 - __main__ - DEBUG - 🔍 Starting extraction for URL: https://youtu.be/_P8J2hiNXu8?si=RMGfwaANsio8TOmW
+2025-12-21 09:50:16,194 - __main__ - DEBUG - Trying strategy 1/3: _try_extract_with_verbose
+2025-12-21 09:50:20,310 - __main__ - INFO - ✅ Extraction successful with strategy 1
+2025-12-21 09:50:20,350 - __main__ - INFO - Audio info extracted in 4.1s
+2025-12-21 09:50:20,352 - __main__ - INFO - Title: បងក្រ - Tena ft. YCN Rakhie [ Lyrics Video]
+2025-12-21 09:50:20,352 - __main__ - INFO - Duration: 298s
+2025-12-21 09:50:20,352 - __main__ - INFO - Format: mp4 (ID: 18)
+2025-12-21 09:50:20,354 - __main__ - DEBUG - Audio URL: https://rr7---sn-nh5gu5mp5u5-2oil.googlevideo.com/videoplayback?expire=1766307018&ei=amBHaaHlDLnassU...
+2025-12-21 09:50:20,354 - __main__ - DEBUG - Downloading from: https://rr7---sn-nh5gu5mp5u5-2oil.googlevideo.com/videoplayback?expire=1766307018&ei=amBHaaHlDLnassU...
+2025-12-21 09:50:30,441 - __main__ - DEBUG - Downloaded 5.92MB successfully

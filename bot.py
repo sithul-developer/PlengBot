@@ -267,7 +267,7 @@ class FastYouTubeDownloader:
             logger.info(f"Format: {audio_info['ext']} (ID: {audio_info['format_id']})")
             
             # Validate
-            if audio_info['duration'] > 1800:
+            if audio_info['duration'] > 3600:
                 raise Exception("Video too long (max 30 minutes)")
             
             if audio_info.get('is_live'):

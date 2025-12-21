@@ -21,7 +21,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('bot_debug.log'),
-        logging.StreamHandler() 
+        logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
@@ -266,9 +266,9 @@ class FastYouTubeDownloader:
             logger.info(f"Duration: {audio_info['duration']}s")
             logger.info(f"Format: {audio_info['ext']} (ID: {audio_info['format_id']})")
             
-            # UPDATED: Changed from 1800 to 3600 seconds (30 to 60 minutes)
-            if audio_info['duration'] > 3600:
-                raise Exception("Video too long (max 60 minutes)")
+            # Validate
+            if audio_info['duration'] > 1800:
+                raise Exception("Video too long (max 30 minutes)")
             
             if audio_info.get('is_live'):
                 raise Exception("Live streams not supported")
@@ -305,7 +305,7 @@ Send me any YouTube link and I'll download the audio for you!
 • No rate limits or restrictions
 
 <b>Limits:</b>
-• Max 60 minutes per video
+• Max 30 minutes per video
 • Max 50MB file size
 
 <b>Troubleshooting:</b>
@@ -431,7 +431,7 @@ def process_download_async(chat_id, user_id, url):
                     audio=audio_buffer,
                     title=clean_text(audio_info['title'][:64]),
                     performer=clean_uploader[:64],
-                    duration=min(audio_info['duration'], 3600),  # Updated to 3600
+                    duration=min(audio_info['duration'], 600),
                     caption=f"🎵 {safe_caption}",
                     timeout=120
                 )
@@ -460,8 +460,7 @@ def process_download_async(chat_id, user_id, url):
                 user_friendly_msg = "❌ "
                 
                 if "too long" in error_msg.lower():
-                    # UPDATED: Changed message from 30 to 60 minutes
-                    user_friendly_msg += "Video too long (max 60 minutes)"
+                    user_friendly_msg += "Video too long (max 30 minutes)"
                 elif "too large" in error_msg.lower():
                     user_friendly_msg += "File too large (max 50MB)"
                 elif "private" in error_msg.lower() or "unavailable" in error_msg.lower():

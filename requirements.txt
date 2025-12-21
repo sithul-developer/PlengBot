@@ -1,0 +1,4 @@
+pyTelegramBotAPI==4.20.0
+yt-dlp==2024.7.20
+requests==2.32.3
+python-dotenv==1.0.1
